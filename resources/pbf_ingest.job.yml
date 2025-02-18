@@ -1,0 +1,104 @@
+resources:
+  jobs:
+    pbf_datasource_demo:
+      name: "PBF Ingestion Demo"
+
+      # Define common parameters for the job
+      parameters:
+        - name: region
+          default: "luxembourg"         # The region for which data is processed
+        - name: geometryType
+          default: "WKT"               # Default geometry type
+        - name: emptyTagFilter
+          default: "true"              # Default: true (filters empty tags)
+        - name: keyFilter
+          default: "building"          # Optional key filter
+        - name: tagFilter
+          default: ""                  # Optional tag filter
+        - name: refreshPbf
+          default: "false"             # Determines whether to run the download step
+
+      # Define common base parameters as an anchor
+      base_parameters: &common_base_parameters
+        pbfPath: "/Volumes/timo/geospatial/osm/{{job.parameters.region}}-latest.osm.pbf"
+        bronzeTable: "timo.geospatial.buildings_{{job.parameters.region}}_bronze"
+
+      # Job trigger configuration
+      trigger:
+        periodic:
+          interval: 1
+          unit: WEEKS                  # Runs the job once every week
+
+      # Notifications for job failures
+      email_notifications:
+        on_failure:
+          - timo.roest@databricks.com
+
+      # Tasks in the job pipeline
+      tasks:
+        # Task: Check if the PBF file needs to be refreshed
+        - task_key: pbf_refresh
+          condition_task:
+            op: EQUAL_TO
+            left: "{{job.parameters.refreshPbf}}"
+            right: "true"
+
+        # Task: Download the PBF file if refresh is enabled
+        - task_key: download_pbf
+          depends_on:
+            - task_key: pbf_refresh
+              outcome: "true"
+          notebook_task:
+            notebook_path: ../src/download_pbf.ipynb
+            base_parameters:
+              <<: *common_base_parameters  # Merge common base parameters
+
+        # Task: Ingest the PBF file into the bronze table
+        - task_key: pbf_ingest_bronze
+          depends_on:
+            - task_key: pbf_refresh
+              outcome: "false"
+            - task_key: download_pbf
+          run_if: AT_LEAST_ONE_SUCCESS  # Task runs if any dependent task succeeds
+          job_cluster_key: job_cluster
+          notebook_task:
+            notebook_path: ../src/pbf_ingest.ipynb
+            base_parameters:
+              <<: *common_base_parameters  # Merge common base parameters
+
+        # Task: Perform density analysis on the ingested data
+        - task_key: density_analysis
+          depends_on:
+            - task_key: pbf_ingest_bronze
+          run_if: ALL_SUCCESS           # Task runs only if all dependent tasks succeed
+          job_cluster_key: job_cluster
+          notebook_task:
+            notebook_path: ../src/analytics.ipynb
+            base_parameters:
+              <<: *common_base_parameters  # Merge common base parameters
+
+      # Define the job cluster configuration
+      job_clusters:
+        - job_cluster_key: job_cluster
+          new_cluster:
+            num_workers: 0
+            cluster_name: ""
+            spark_version: "15.4.x-scala2.12"
+            spark_conf:
+              spark.master: "local[*, 4]"
+              spark.databricks.cluster.profile: "singleNode"
+            azure_attributes:
+              first_on_demand: 1
+              availability: "ON_DEMAND_AZURE"
+              spot_bid_max_price: -1
+            node_type_id: "Standard_D32ads_v5"
+            driver_node_type_id: "Standard_D32ads_v5"
+            ssh_public_keys: []
+            custom_tags:
+              ResourceClass: "SingleNode"
+            spark_env_vars:
+              PYSPARK_PYTHON: "/databricks/python3/bin/python3"
+            enable_elastic_disk: true
+            init_scripts: []
+            data_security_mode: "SINGLE_USER"
+            runtime_engine: "PHOTON"
