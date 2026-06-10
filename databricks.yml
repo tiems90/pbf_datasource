@@ -1,0 +1,37 @@
+# Databricks asset bundle definition for pbf_datasource.
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+bundle:
+  name: pbf_datasource
+
+include:
+  - resources/*.yml
+
+variables:
+  pbf_volume_path:
+    description: UC volume path holding .osm.pbf files. Override per workspace.
+    default: /Volumes/main/default/osm
+  bronze_table_prefix:
+    description: catalog.schema.table_prefix for bronze tables (region name is appended).
+    default: main.default.buildings_
+
+targets:
+  dev:
+    # Development copy. Deployed resources get prefixed with '[dev <your_user>]'
+    # and schedules are paused by default.
+    # See https://docs.databricks.com/dev-tools/bundles/deployment-modes.html
+    mode: development
+    default: true
+    # Set workspace.host here, or pass `-p <profile>` on the CLI:
+    #   databricks bundle deploy -t dev -p <your-profile>
+    # workspace:
+    #   host: https://<your-workspace>.cloud.databricks.com
+
+  prod:
+    mode: production
+    # workspace:
+    #   host: https://<your-workspace>.cloud.databricks.com
+    # permissions:
+    #   - user_name: <your.email@your.org>
+    #     level: CAN_MANAGE
+    # run_as:
+    #   user_name: <your.email@your.org>

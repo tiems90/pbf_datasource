@@ -3,102 +3,81 @@ resources:
     pbf_datasource_demo:
       name: "PBF Ingestion Demo"
 
-      # Define common parameters for the job
       parameters:
         - name: region
-          default: "luxembourg"         # The region for which data is processed
+          default: "andorra"
         - name: geometryType
-          default: "WKT"               # Default geometry type
+          default: "WKT"
         - name: emptyTagFilter
-          default: "true"              # Default: true (filters empty tags)
+          default: "true"
         - name: keyFilter
-          default: "building"          # Optional key filter
+          default: "building"
         - name: tagFilter
-          default: ""                  # Optional tag filter
+          default: ""
         - name: refreshPbf
-          default: "false"             # Determines whether to run the download step
+          default: "false"
 
-      # Define common base parameters as an anchor
       base_parameters: &common_base_parameters
-        pbfPath: "/Volumes/timo/geospatial/osm/{{job.parameters.region}}-latest.osm.pbf"
-        bronzeTable: "timo.geospatial.buildings_{{job.parameters.region}}_bronze"
+        pbfPath: "${var.pbf_volume_path}/{{job.parameters.region}}-latest.osm.pbf"
+        bronzeTable: "${var.bronze_table_prefix}{{job.parameters.region}}_bronze"
 
-      # Job trigger configuration
       trigger:
         periodic:
           interval: 1
-          unit: WEEKS                  # Runs the job once every week
+          unit: WEEKS
 
-      # Notifications for job failures
-      email_notifications:
-        on_failure:
-          - timo.roest@databricks.com
+      # email_notifications:
+      #   on_failure:
+      #     - <your.email@your.org>
 
-      # Tasks in the job pipeline
+      # Serverless environment shared by all notebook tasks.
+      # osmium is preinstalled on the notebook env (driver side); the DataSource
+      # worker pool bootstraps it at runtime — see _bootstrap_osmium in
+      # src/load_datasource.ipynb.
+      environments:
+        - environment_key: pbf_env
+          spec:
+            client: "3"
+            dependencies:
+              - osmium
+              - geopandas
+              - folium
+
       tasks:
-        # Task: Check if the PBF file needs to be refreshed
         - task_key: pbf_refresh
           condition_task:
             op: EQUAL_TO
             left: "{{job.parameters.refreshPbf}}"
             right: "true"
 
-        # Task: Download the PBF file if refresh is enabled
         - task_key: download_pbf
           depends_on:
             - task_key: pbf_refresh
               outcome: "true"
+          environment_key: pbf_env
           notebook_task:
             notebook_path: ../src/download_pbf.ipynb
             base_parameters:
-              <<: *common_base_parameters  # Merge common base parameters
+              <<: *common_base_parameters
 
-        # Task: Ingest the PBF file into the bronze table
         - task_key: pbf_ingest_bronze
           depends_on:
             - task_key: pbf_refresh
               outcome: "false"
             - task_key: download_pbf
-          run_if: AT_LEAST_ONE_SUCCESS  # Task runs if any dependent task succeeds
-          job_cluster_key: job_cluster
+          run_if: AT_LEAST_ONE_SUCCESS
+          environment_key: pbf_env
           notebook_task:
             notebook_path: ../src/pbf_ingest.ipynb
             base_parameters:
-              <<: *common_base_parameters  # Merge common base parameters
+              <<: *common_base_parameters
 
-        # Task: Perform density analysis on the ingested data
         - task_key: density_analysis
           depends_on:
             - task_key: pbf_ingest_bronze
-          run_if: ALL_SUCCESS           # Task runs only if all dependent tasks succeed
-          job_cluster_key: job_cluster
+          run_if: ALL_SUCCESS
+          environment_key: pbf_env
           notebook_task:
             notebook_path: ../src/analytics.ipynb
             base_parameters:
-              <<: *common_base_parameters  # Merge common base parameters
-
-      # Define the job cluster configuration
-      job_clusters:
-        - job_cluster_key: job_cluster
-          new_cluster:
-            num_workers: 0
-            cluster_name: ""
-            spark_version: "15.4.x-scala2.12"
-            spark_conf:
-              spark.master: "local[*, 4]"
-              spark.databricks.cluster.profile: "singleNode"
-            azure_attributes:
-              first_on_demand: 1
-              availability: "ON_DEMAND_AZURE"
-              spot_bid_max_price: -1
-            node_type_id: "Standard_D32ads_v5"
-            driver_node_type_id: "Standard_D32ads_v5"
-            ssh_public_keys: []
-            custom_tags:
-              ResourceClass: "SingleNode"
-            spark_env_vars:
-              PYSPARK_PYTHON: "/databricks/python3/bin/python3"
-            enable_elastic_disk: true
-            init_scripts: []
-            data_security_mode: "SINGLE_USER"
-            runtime_engine: "PHOTON"
+              <<: *common_base_parameters

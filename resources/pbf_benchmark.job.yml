@@ -2,35 +2,19 @@ resources:
   jobs:
     pbf_benchmark:
       name: PBF Ingest Benchmark
+      environments:
+        - environment_key: bench_env
+          spec:
+            client: "3"
+            dependencies:
+              - osmium
       tasks:
         - task_key: benchmark
-          job_cluster_key: benchmark_cluster
+          environment_key: bench_env
           notebook_task:
             notebook_path: ../src/benchmark.ipynb
-      email_notifications:
-        on_success:
-          - timo@databricks.com
-        on_failure:
-          - timo@databricks.com
-            
-      job_clusters:
-        - job_cluster_key: benchmark_cluster
-          new_cluster:
-            spark_version: 15.4.x-scala2.12
-            spark_conf:
-              spark.master: local[*, 4]
-              spark.databricks.cluster.profile: singleNode
-            azure_attributes:
-              first_on_demand: 1
-              availability: ON_DEMAND_AZURE
-              spot_bid_max_price: -1
-            node_type_id: Standard_D48ads_v5
-            driver_node_type_id: Standard_D48ads_v5
-            custom_tags:
-              ResourceClass: SingleNode
-            spark_env_vars:
-              PYSPARK_PYTHON: /databricks/python3/bin/python3
-            enable_elastic_disk: true
-            data_security_mode: SINGLE_USER
-            runtime_engine: PHOTON
-            num_workers: 0
+      # email_notifications:
+      #   on_success:
+      #     - <your.email@your.org>
+      #   on_failure:
+      #     - <your.email@your.org>

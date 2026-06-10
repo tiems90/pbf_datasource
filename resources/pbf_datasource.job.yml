@@ -1,0 +1,29 @@
+resources:
+  jobs:
+    pbf_datasource_basic_example:
+      name: pbf_datasource_basic_example
+      parameters:
+        - name: job_param
+          default: "123"
+
+      trigger:
+        periodic:
+          interval: 1
+          unit: DAYS
+
+      # email_notifications:
+      #   on_failure:
+      #     - <your.email@your.org>
+
+      environments:
+        - environment_key: demo_env
+          spec:
+            client: "3"
+            dependencies:
+              - osmium
+
+      tasks:
+        - task_key: notebook_task
+          environment_key: demo_env
+          notebook_task:
+            notebook_path: ../src/demo_notebook.ipynb
